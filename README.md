@@ -1,5 +1,3 @@
-# 基于 MUI 实现的全局 Dialog
-
 # 概述
 
 在最近使用 MUI 的过程中，我突然发现 MUI 的 Dialog 好像没有如同 Arco Design 那样自带[命令式调用方法](https://arco.design/react/components/modal#modalmethodconfig)，这个缺失的特性导致我在使用 Dialog 时（即便我只是想很简单地显示一点提示信息），必须显式地在 UI 中声明一个 Dialog 组件。
@@ -231,9 +229,9 @@ export type DialogStateToProps<T extends IGlobalDialog> = Omit<
 };
 ```
 
-可以看到，它引用了一个继承自`IGlobalDialog`的泛型，并使用工具接口 Omit 去除了泛型中的`uuid`和`type`字段，追加了一个`onClose`字段。
+可以看到，它引用了一个继承自`IGlobalDialog`的泛型，并使用工具接口 Omit 去除了泛型中的`uuid`和`type`字段，并且通过`&`操作符追加了一个`onClose`字段。
 
-现在建立一个 Map，把编写好的 Dialog 跟 Model 中的 type 字段一一联系起来：
+在编写完上述的 Dialog 模板后，我们还需要建立一个 Map，把编写好的 Dialog 跟 Model 中的 type 字段一一联系起来：
 
 ```ts
 const DIALOG_MAP = {
@@ -281,11 +279,11 @@ export const GlobalDialogRoot = () => {
 };
 ```
 
-可以看到，我们引用在 Model 层中编写好的 atom：`globalAlertDialogState`为组件引入了一个全局的数据源，并在组件的返回值中通过循环渲染语句将所需的参数赋给了对应的 Dialog 组件，完成了对 Dialog 的渲染。
+可以看到，我们引用在 Model 层中编写好的 atom：`globalAlertDialogState`为组件引入了一个全局的数据源，并在组件的返回值中通过循环渲染语句和对象结构的写法将所需的参数赋给了对应的 Dialog 组件，完成了对 Dialog 的渲染。
 
 同时，在这个组件里还声明了一段用来关闭 Dialog 的函数，它的逻辑也非常简单，就是先将赋给指定 Dialog 的`open`字段置为`false`，在延时一秒后再使用 filter 彻底移除被关闭的 Dialog 对象。
 
-注意这里必须使用回调的方式来对 RecoilState 进行操作，这是因为这里的逻辑是异步的，如果使用对象作为 setState 的参数，用户在快速连续关闭多个 Dialog 的时候，可能会出现异步 setState 的值把同步 setState 的值覆盖住的情况。
+注意这里必须使用回调的方式来对 RecoilState 进行操作，这是因为这里的逻辑是异步的，如果使用对象作为 setState 的参数，用户在快速连续关闭多个 Dialog 的时候，可能会出现 setTimeout 中异步 setState 的值把同步 setState 的值覆盖住的情况。
 
 到这里，View 层的内容就算编写完毕了，接下来让我们声明一个 React hook 作为 Controller。
 
@@ -350,11 +348,11 @@ const useGlobalDialog = () => {
 
 Controller 层的主体就是这个`useGlobalDialog`，内容不多，可以看到它实际上就是返回了一个对象，对象里有两个函数`confirm`和`normal`，分别代表了两种不同的 Dialog。
 
-它们的参数是一致的，使用 Omit 工具类型去除了`IGlobalDialog`中的`uuid`、`open`和`extra`字段，也就是说，用户实际上需要填入的参数只有`title`和`content`，这里其实也可以直接声明一个包含`title`和`content`的接口作为 val 的类型，但我觉得这样写可以更清晰地表示出 val 跟`IGlobalDialog`之间的“摘要”关系，最终还是写成了这个样子。
+它们的参数是一致的，使用 Omit 工具类型去除了`IGlobalDialog`中的`uuid`、`open`和`extra`字段，也就是说，用户实际上需要填入的参数只有`title`和`content`，这里其实也可以直接声明一个包含`title`和`content`的接口作为 val 的类型，但我觉得这样写可以更清晰地表示出 val 跟`IGlobalDialog`之间的“摘要”关系，所以最终还是写成了这个样子。
 
-唯一值得一提的可能就是`confirm`函数中对 Promise 的用法了，从源码就能直接看到这里其实是吧一个 Promise 中的 resolver 提取了出来，当成参数丢给 confirm Dialog 去用了，这样做的好处是用户在调用`Controller.confirm`方法的时候可以用`async/await`的方式来处理从 confirm 框体中得到的结果，不好的地方在于破坏了不可变编程的代码风格，就显得这个`resolver`变量很突兀吧。
+唯一值得一提的可能就是`confirm`函数中对 Promise 的用法了，从源码就能直接看到这里其实是把一个 Promise 中的 resolver 提取了出来，当成参数丢给 confirm Dialog 去调用了，这样做的好处是用户在调用`Controller.confirm`方法的时候可以用`async/await`的方式来处理从 confirm 框体中得到的结果，不好的地方在于破坏了不可变编程的代码风格，就显得这个`resolver`变量有点突兀。
 
-而上面的两个`fill*`函数，只看类型定义也很容易理解，就是把用户输入的内容包装成可以渲染的 Model 的函数，这倒没有什么特别值得注意的。
+而上面的两个`fill*`函数，只看类型定义也可以很容易的理解，就是把用户输入的内容包装成可以渲染的 Model 的函数，这倒没有什么特别值得注意的。
 
 # 享用编码的成果
 
@@ -405,7 +403,7 @@ function App() {
 export default App;
 ```
 
-在一个全局的位置插入`GlobalDialogRoot`组件后，就可以在项目的任意组件里通过引入`useGlobalDialog`这个 React Hook 的形式来随时呼出一个临时的 Dialog，有时项目可能面临一些嵌套展示 Dialog 的场景，这个全局 Dialog 的逻辑其实也能很好地把它给兜住。
+在一个全局的位置插入`GlobalDialogRoot`组件后，就可以在项目的任意组件里通过引入`useGlobalDialog`这个 React Hook 的形式来随时调用 GlobalDialog Api，像上述这段逻辑里其实是一个嵌套展示 Dialog 的场景，这个全局 Dialog 的逻辑其实也能很好地把它给兜住。
 
 而在`handleOpenConfirmDialog`函数中，可以看到程序使用`await`接受了异步的返回值，并将它打印了出来。
 
@@ -473,13 +471,13 @@ ObservableDataSource.setValue = (value) => {
 export default ObservableDataSource;
 ```
 
-本来这个 Observable 可以编写的更简短一点的，但因为 js 的`this`会随着调用方式乱\*8 指，我合计不能这样惯着它啊，就硬是先给它声明了再给它把方法覆盖上去，避免了使用`this`的场景。
+本来这个 Observable 可以编写的更简短一点的，但因为 js 的`this`会随着调用方式乱\*8 指，我合计不能这样惯着它啊，就硬是先声明了对象，再给它把方法覆盖上去，从而避免了使用`this`的场景。
 
 这些方法的逻辑大体看上来也比较简单：
 
 - `value`即之前存储在 Recoil 中的全局信息，很好理解。
 
-- `subscribe`提交一个 React setState 函数，返回一个 uuid 供`unSubscribe`调用。
+- `subscribe`接受一个 React setState 函数，它会为这个函数声明一个`uuid`并把它记录到自己的订阅者 Map `notifier`中，然后`subscribe`会返回一个 uuid 供`unSubscribe`调用。
 
 - `unSubscribe`接受一个`uuid`，注销掉在`notifier`中声明需要同步的 state，
 
@@ -543,11 +541,11 @@ export const GlobalDialogRoot = () => {
 };
 ```
 
-首先我们把`[dialogs, setDialogs]`从 Recoil 迁移到了原生的`setState`。
+首先我们把`[dialogs, setDialogs]`从 Recoil 迁移到了 React 原生的`setState`。
 
 然后，我们创建了一个`useEffect`来把`dialogs`的值同步到`ObservableDataSource`对象中，并声明了一个返回函数，在组件被卸载时取消订阅行为。
 
-最后，我们要修改`handleMoveDialog`方法，不去主动操控`GlobalDialogRoot`中的 state，而是通过`ObservableDataSource`来通知`GlobalDialogRoot`更新自己的 state，算是一个简易的控制反转吧。
+最后，我们要修改`handleMoveDialog`方法，不在组件里主动操控`GlobalDialogRoot`中的 state，而是通过`ObservableDataSource`的`setValue`方法来通知`GlobalDialogRoot`更新自己的 state，算是一个简易的控制反转吧。
 
 然后，我们还需要把 Controller 层的数据源也更换成这个`Observable`：
 
@@ -595,6 +593,6 @@ const useGlobalDialog = () => {
 
 就在今年年初制定的计划中，我原本还为自己定好了七月跳槽的 kpi，目标薪资大约在 20W~25W 之间，可惜，最近在严谨地校对了一下自己的能力后，我还是深感自己依旧没能达到足够的水平。
 
-所以，在接下来的半年时间里，我想尽量去做一些有意义的事情、有产出的事情，争取把上半年错失掉的时间给追回来。
+所以，在接下来的半年时间里，我想尽量去做一些有意义的事情、有产出的事情，争取把上半年错失掉的时间给追回来，尽量弥补一下已经无法挽回的遗憾。
 
 我想说的大概就是这些吧。
