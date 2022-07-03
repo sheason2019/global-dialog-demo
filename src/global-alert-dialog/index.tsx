@@ -1,18 +1,13 @@
-import { atom, useRecoilState } from "recoil";
+import { FC, useEffect, useState } from "react";
 import ConfirmDialog from "./confirm-dialog";
 import NormalDialog from "./normal-dialog";
+import ObservableDataSource from "./observable-data-source";
 import {
   GlobalDialogTypeCompose,
   IGlobalDialog,
   IGlobalConfirmDialogState,
   IGlobalNormalDialogState,
 } from "./typings";
-
-// 使用Recoil进行全局控制
-const globalAlertDialogState = atom<GlobalDialogTypeCompose[]>({
-  key: "common/global-alert-dialog",
-  default: [],
-});
 
 // 把GlobalDialogTypeCompose中的type路由到指定的渲染器
 const DIALOG_MAP = {
@@ -22,17 +17,30 @@ const DIALOG_MAP = {
 
 export const GlobalDialogRoot = () => {
   // 需要渲染的Dialogs
-  const [dialogs, setDialogs] = useRecoilState(globalAlertDialogState);
+  const [dialogs, setDialogs] = useState<GlobalDialogTypeCompose[]>(
+    ObservableDataSource.value
+  );
+
+  useEffect(() => {
+    const key = ObservableDataSource.subscribe(setDialogs);
+    return () => {
+      ObservableDataSource.unSubscribe(key);
+    };
+  }, []);
 
   const handleRemoveDialog = (dialog: GlobalDialogTypeCompose) => {
+    // 获取数据源的值
+    const value = ObservableDataSource.value;
     // 首先关闭Dialog，避免影响到Dialog关闭时的动画
     const nextDialog = { ...dialog, open: false };
-    setDialogs((dialogs) =>
-      dialogs.map((item) => (item === dialog ? nextDialog : item))
+    ObservableDataSource.setValue(
+      value.map((item) => (item === dialog ? nextDialog : item))
     );
     // 使用回调方式移除已被标记的Object
     const timer = setTimeout(() => {
-      setDialogs((dialogs) => dialogs.filter((item) => item !== dialog));
+      // 在延时后重新获取数据源的值
+      const value = ObservableDataSource.value;
+      ObservableDataSource.setValue(value.filter((item) => item !== dialog));
     }, 1000);
     // Effect return，避免出现空setState警告
     return () => clearTimeout(timer);
@@ -83,9 +91,10 @@ const fillNormalProps = (props: IGlobalDialog): IGlobalNormalDialogState => ({
 
 // 提供react hook调用全局Dialog接口
 const useGlobalDialog = () => {
-  const [_dialogs, setDialogs] = useRecoilState(globalAlertDialogState);
   const Controller = {
-    confirm: (val: Omit<IGlobalDialog, "uuid" | "open" | "extra">) => {
+    confirm: (val: Omit<IGlobalDialog, "uuid">) => {
+      const dialogs = ObservableDataSource.value;
+      const setDialogs = ObservableDataSource.setValue;
       let resolver = null;
       const asyncResult = new Promise<boolean>((res) => {
         resolver = res;
@@ -94,13 +103,15 @@ const useGlobalDialog = () => {
         throw new Error("获取resolver失败");
       }
       const dialog = fillConfirmProps(fillGlobalDialog(val), resolver);
-      setDialogs((dialogs) => [...dialogs, dialog]);
+      setDialogs([...dialogs, dialog]);
 
       return asyncResult;
     },
-    normal: (val: Omit<IGlobalDialog, "uuid" | "open" | "extra">) => {
+    normal: (val: Omit<IGlobalDialog, "uuid">) => {
+      const dialogs = ObservableDataSource.value;
+      const setDialogs = ObservableDataSource.setValue;
       const dialog = fillNormalProps(fillGlobalDialog(val));
-      setDialogs((dialogs) => [...dialogs, dialog]);
+      setDialogs([...dialogs, dialog]);
     },
   };
   return Controller;
