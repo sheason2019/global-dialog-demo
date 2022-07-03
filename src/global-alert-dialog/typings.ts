@@ -3,6 +3,7 @@ export interface IGlobalDialog {
   uuid: string;
   title: React.ReactNode;
   content: React.ReactNode;
+  open: boolean;
   extra: any;
 }
 
@@ -22,14 +23,8 @@ export type DialogStateToProps<T extends IGlobalDialog> = Omit<
   T,
   "uuid" | "type"
 > & {
-  open: boolean;
   onClose: () => void;
 };
 
-export interface GlobalDialogTypeMap {
-  confirm: IGlobalConfirmDialogState;
-  normal: IGlobalNormalDialogState;
-}
-
 // 所有Dialog类型的组合
-export type GlobalDialogTypeCompose = GlobalDialogTypeMap[keyof GlobalDialogTypeMap];
+export type GlobalDialogTypeCompose = IGlobalConfirmDialogState | IGlobalNormalDialogState;
