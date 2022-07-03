@@ -412,3 +412,189 @@ export default App;
 这样，一个基本的全局 Dialog 工具就差不多实现完毕了。
 
 # 不使用状态管理库
+
+在某些场景下，你可能并不想为项目引入一个状态管理库，所以我在这里也提供了一种使用 Observable 设计模式来同步组件间通信的方法。
+
+## 代码链接
+
+同样的，这里先把源码的链接抛出来，免得我太啰嗦影响大家心情……
+
+https://github.com/sheason2019/global-dialog-demo/tree/without-recoil
+
+## Observable 对象
+
+在不影响用户态的前提条件下，想实现这个全局调用 Dialog 的功能，最大的难点就在于如何实现组件间的通信，如何在其他的组件里修改`GlobalDialogRoot`中的状态。
+
+一看到这个核心问题，那第一反应肯定就是使用 Observable 设计模式来构建组件间通信，找到方向后，我们很快就可以编写出这样一个基础的 Observable：
+
+```ts
+import { GlobalDialogTypeCompose } from "./typings";
+
+interface IObservableDataSource {
+  value: GlobalDialogTypeCompose[];
+  subscribe: (
+    setter: React.Dispatch<React.SetStateAction<GlobalDialogTypeCompose[]>>
+  ) => string;
+  unSubscribe: (uuid: string) => void;
+  setValue: (value: GlobalDialogTypeCompose[]) => void;
+  notifier: {
+    [T in string]: (value: GlobalDialogTypeCompose[]) => void;
+  };
+}
+
+const ObservableDataSource: IObservableDataSource = {
+  value: [],
+  subscribe(_setter) {
+    throw new Error("Function unimpleted");
+  },
+  unSubscribe(_uuid) {
+    throw new Error("Function unimpleted");
+  },
+  setValue(_value) {
+    throw new Error("Function unimpleted");
+  },
+  notifier: {},
+};
+ObservableDataSource.subscribe = (setter) => {
+  const key = crypto.randomUUID();
+  ObservableDataSource.notifier[key] = setter;
+  return key;
+};
+ObservableDataSource.unSubscribe = (uuid) => {
+  delete ObservableDataSource.notifier[uuid];
+};
+ObservableDataSource.setValue = (value) => {
+  ObservableDataSource.value = value;
+  for (const key in ObservableDataSource.notifier) {
+    ObservableDataSource.notifier[key](value);
+  }
+};
+
+export default ObservableDataSource;
+```
+
+本来这个 Observable 可以编写的更简短一点的，但因为 js 的`this`会随着调用方式乱\*8 指，我合计不能这样惯着它啊，就硬是先给它声明了再给它把方法覆盖上去，避免了使用`this`的场景。
+
+这些方法的逻辑大体看上来也比较简单：
+
+- `value`即之前存储在 Recoil 中的全局信息，很好理解。
+
+- `subscribe`提交一个 React setState 函数，返回一个 uuid 供`unSubscribe`调用。
+
+- `unSubscribe`接受一个`uuid`，注销掉在`notifier`中声明需要同步的 state，
+
+- `notifier`则是保存了需要同步`value`的订阅者。
+
+这样一来，组件间通信的桥梁就算搭好了，接下来就要修改代码来使用这个 Observable 对象。
+
+## 使用 Observable
+
+首先，我们需要替换`GlobalDialogRoot`的数据源。
+
+具体操作如下：
+
+```tsx
+export const GlobalDialogRoot = () => {
+  // 需要渲染的Dialogs
+  const [dialogs, setDialogs] = useState<GlobalDialogTypeCompose[]>(
+    ObservableDataSource.value
+  );
+
+  useEffect(() => {
+    const key = ObservableDataSource.subscribe(setDialogs);
+    return () => {
+      ObservableDataSource.unSubscribe(key);
+    };
+  }, []);
+
+  const handleRemoveDialog = (dialog: GlobalDialogTypeCompose) => {
+    // 获取数据源的值
+    const value = ObservableDataSource.value;
+    // 首先关闭Dialog，避免影响到Dialog关闭时的动画
+    const nextDialog = { ...dialog, open: false };
+    ObservableDataSource.setValue(
+      value.map((item) => (item === dialog ? nextDialog : item))
+    );
+    // 使用回调方式移除已被标记的Object
+    const timer = setTimeout(() => {
+      // 在延时后重新获取数据源的值
+      const value = ObservableDataSource.value;
+      ObservableDataSource.setValue(value.filter((item) => item !== dialog));
+    }, 1000);
+    // Effect return，避免出现空setState警告
+    return () => clearTimeout(timer);
+  };
+
+  return (
+    <>
+      {dialogs.map((dialog) => {
+        const Render = DIALOG_MAP[dialog.type];
+
+        return (
+          <Render
+            key={dialog.uuid}
+            onClose={() => handleRemoveDialog(dialog)}
+            {...dialog}
+          />
+        );
+      })}
+    </>
+  );
+};
+```
+
+首先我们把`[dialogs, setDialogs]`从 Recoil 迁移到了原生的`setState`。
+
+然后，我们创建了一个`useEffect`来把`dialogs`的值同步到`ObservableDataSource`对象中，并声明了一个返回函数，在组件被卸载时取消订阅行为。
+
+最后，我们要修改`handleMoveDialog`方法，不去主动操控`GlobalDialogRoot`中的 state，而是通过`ObservableDataSource`来通知`GlobalDialogRoot`更新自己的 state，算是一个简易的控制反转吧。
+
+然后，我们还需要把 Controller 层的数据源也更换成这个`Observable`：
+
+```ts
+// 提供react hook调用全局Dialog接口
+const useGlobalDialog = () => {
+  const Controller = {
+    confirm: (val: Omit<IGlobalDialog, "uuid">) => {
+      const dialogs = ObservableDataSource.value;
+      const setDialogs = ObservableDataSource.setValue;
+      let resolver = null;
+      const asyncResult = new Promise<boolean>((res) => {
+        resolver = res;
+      });
+      if (resolver === null) {
+        throw new Error("获取resolver失败");
+      }
+      const dialog = fillConfirmProps(fillGlobalDialog(val), resolver);
+      setDialogs([...dialogs, dialog]);
+
+      return asyncResult;
+    },
+    normal: (val: Omit<IGlobalDialog, "uuid">) => {
+      const dialogs = ObservableDataSource.value;
+      const setDialogs = ObservableDataSource.setValue;
+      const dialog = fillNormalProps(fillGlobalDialog(val));
+      setDialogs([...dialogs, dialog]);
+    },
+  };
+  return Controller;
+};
+```
+
+实际上，我们的操作就是把原本放在 Recoil 中维护的数据提取了出来，通过 Observable 把这份数据暴露到了全局单独进行维护。
+
+这样一来，这个全局 Dialog 就成功剥离了状态管理库的依赖。
+
+# 结语
+
+以上就是本次分享的全部内容，其实仅从实现的难度和深度来看，这个 Demo 真没什么大不了的，所涉及到的基本也都是一些很基础的知识，如果看看源码，也能很轻易的发现大多数内容其实都是在做实用性不高的类型体操。
+
+那为什么我还写了这么长一篇文章并把它发出来呢？
+
+坦诚的讲，主要还是因为我觉得自己 2022 年上半年摆烂摆的有点太厉害了，甚至让我自己都不知不觉地陷入到了一种踌躇不前的心境里，等我稍微回过神来的时候，转眼间就过去了半年的时间。浪费时间的罪恶感让我决定自己在以后要经常留下一些印迹证明自己其实没有在偷懒，哪怕只是毫无意义地去重复造别人已经写过无数次的简单轮子也好，至少产出一点东西来证明自己没有游手好闲。
+
+就在今年年初制定的计划中，我原本还为自己定好了七月跳槽的 kpi，目标薪资大约在 20W~25W 之间，可惜，最近在严谨地校对了一下自己的能力后，我还是深感自己依旧没能达到足够的水平。
+
+所以，在接下来的半年时间里，我想尽量去做一些有意义的事情、有产出的事情，争取把上半年错失掉的时间给追回来。
+
+我想说的大概就是这些吧。
