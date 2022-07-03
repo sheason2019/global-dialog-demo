@@ -13,9 +13,10 @@ const ConfirmDialog: FC<DialogStateToProps<IGlobalConfirmDialogState>> = ({
   open,
   title,
   content,
-  resolver,
+  extra,
   onClose,
 }) => {
+  const { resolver } = extra;
   const handleResove = (value: boolean) => {
     onClose();
     resolver(value);

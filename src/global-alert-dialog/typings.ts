@@ -3,12 +3,15 @@ export interface IGlobalDialog {
   uuid: string;
   title: React.ReactNode;
   content: React.ReactNode;
+  extra: any;
 }
 
 // Confirm Dialog
 export interface IGlobalConfirmDialogState extends IGlobalDialog {
   type: "confirm";
-  resolver: (v: boolean) => void;
+  extra: {
+    resolver: (v: boolean) => void;
+  }
 }
 
 export interface IGlobalNormalDialogState extends IGlobalDialog {

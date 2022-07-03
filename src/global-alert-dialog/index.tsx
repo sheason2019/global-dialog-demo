@@ -1,4 +1,4 @@
-import { FC, useState } from "react";
+import { useState } from "react";
 import { atom, useRecoilState } from "recoil";
 import ConfirmDialog from "./confirm-dialog";
 import NormalDialog from "./normal-dialog";
@@ -47,8 +47,7 @@ export const GlobalDialogRoot = () => {
   return (
     <>
       {dialogs.map((dialog) => {
-        // 跳了半天体操跳不明白，只能乖乖用any……
-        const Render: FC<any> = DIALOG_MAP[dialog.type];
+        const Render = DIALOG_MAP[dialog.type];
 
         return (
           <Render
@@ -75,7 +74,9 @@ const fillConfirmProps = (
 ): IGlobalConfirmDialogState => ({
   ...props,
   type: "confirm",
-  resolver,
+  extra: {
+    resolver,
+  },
 });
 // 注入NormalProps所需的内容
 const fillNormalProps = (props: IGlobalDialog): IGlobalNormalDialogState => ({
@@ -85,7 +86,7 @@ const fillNormalProps = (props: IGlobalDialog): IGlobalNormalDialogState => ({
 
 // 提供react hook调用全局Dialog接口
 const useGlobalDialog = () => {
-  const [dialogs, setDialogs] = useRecoilState(globalAlertDialogState);
+  const [_dialogs, setDialogs] = useRecoilState(globalAlertDialogState);
   const Controller = {
     confirm: (val: Omit<IGlobalDialog, "uuid">) => {
       let resolver = null;
